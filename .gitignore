@@ -1,0 +1,12 @@
+# Dependencias
+node_modules/
+__pycache__/
+*.pyc
+target/
+build/
+
+# Logs gerados em runtime
+agencia/data/*.jsonl
+
+# Sistema
+.DS_Store
