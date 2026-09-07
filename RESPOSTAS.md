@@ -357,3 +357,146 @@ tokens em circulacao — inclusive os legitimos, derrubando todo mundo. Por isso
 o segredo vem de variavel de ambiente (`${JWT_SEGREDO:...}`) com um valor padrao apenas para o
 ambiente local de desenvolvimento: em producao, chave em arquivo versionado no Git e um vazamento
 esperando acontecer.
+
+---
+
+## Parte G — Frontend (secao 12.3)
+
+### Decisoes de design (justificativas pedidas na secao 12)
+
+**Tecnologia: HTML, CSS e JavaScript puro, sem framework.**
+O requisito de plataforma era apenas "web". Escolhi sem framework por dois motivos praticos:
+a pagina abre com duplo clique, sem `npm install`, sem servidor de desenvolvimento e sem etapa
+de build — uma peca a menos para falhar na hora da apresentacao; e a separacao MVC fica visivel
+no codigo, em tres arquivos, em vez de escondida atras das convencoes de um framework.
+
+Uma consequencia dessa escolha: os scripts sao classicos, e nao modulos ES (`type="module"`).
+Modulos ES sao bloqueados pelo navegador quando a pagina vem de `file://`, o que obrigaria a
+subir um servidor HTTP so para abrir a tela. Isso tambem exigiu liberar CORS no backend, porque
+uma pagina aberta por `file://` chega a API com `Origin: null`.
+
+**Onde o token e guardado: `localStorage`.**
+E o que faz a sessao sobreviver ao F5 — sem isso, recarregar a pagina exigiria novo login. A
+limitacao e conhecida e vale registrar: `localStorage` e legivel por qualquer script da mesma
+origem, entao um XSS rouba o token. A alternativa mais segura seria um cookie `HttpOnly`, que o
+JavaScript nao enxerga, mas ai o backend precisaria emitir e ler cookie, e a API deixaria de ser
+puramente stateless via cabecalho `Authorization`.
+
+**Como o frontend aponta para as 3 agencias:** a tela de login tem um seletor de agencia de
+entrada, e a agencia escolhida e guardada junto com o token. O rodape de cada opcao lembra a
+particao (`contas 0, 3, 6...`), e antes de abrir uma conta o proprio frontend refaz o calculo
+`id % 3` e avisa se o numero pertence a outra agencia — economiza uma requisicao e explica o
+motivo, em vez de deixar a pessoa levar um 400 sem contexto.
+
+### Perguntas
+
+**1. Como o frontend "lembra" de reenviar o token em cada requisicao depois do login?**
+
+Ele nao lembra em cada tela: existe **um unico ponto de saida** para a rede. Toda chamada a API
+passa pela funcao `requisitar()` do `model.js`, e e la, num lugar so, que o cabecalho e anexado:
+
+```javascript
+if (estado.token) {
+  opcoes.headers['Authorization'] = 'Bearer ' + estado.token;
+}
+```
+
+Os metodos publicos do Model (`listarContas`, `depositar`, `sacar`, `transferir`...) sao todos
+casca fina sobre essa funcao. O efeito pratico e que nenhum botao da tela sabe que existe um
+token — nao ha como esquecer de mandar o cabecalho em uma tela nova, porque nenhuma tela monta
+requisicao por conta propria. O token em si vem do `localStorage`, carregado na abertura da
+pagina por `carregarSessaoSalva()`.
+
+**2. Se o token expirar no meio de uma operacao, o que acontece? A interface avisa?**
+
+Avisa, e com o motivo correto. Todo erro de API converge para a funcao `tratarErro()` do
+`controller.js`, que trata o 401 de forma diferente dos demais:
+
+```javascript
+if (erro.status === 401) {
+  Model.encerrarSessao();
+  View.mostrarTelaLogin();
+  View.mostrarMensagem('Sua sessao expirou (o token JWT tem validade limitada). Entre novamente.', 'aviso');
+  return;
+}
+```
+
+Fiz assim porque mostrar apenas "nao autorizado" e deixar a pessoa na tela seria pior do que
+inutil: ela continuaria clicando em botoes que nunca mais funcionariam, sem entender por que.
+Encerrar a sessao e voltar ao login torna o proximo passo obvio. Os outros status tem tratamento
+proprio: **403** mostra a mensagem da API (a conta nao e sua), e **502** — a falha conhecida da
+Parte D — alem de mostrar o erro, **recarrega os saldos**, para a pessoa ver com os proprios
+olhos que o debito saiu e nao voltou.
+
+Nenhum erro morre no console: a faixa de mensagens no topo da pagina e o unico destino de
+qualquer falha, inclusive a de agencia fora do ar. Nesse caso especifico, o `fetch` rejeita com
+"Failed to fetch", que nao diz nada a quem esta usando o sistema, entao o Model traduz para
+"Nao foi possivel falar com a Agencia 1 (http://localhost:4001). Ela esta no ar?".
+
+**3. Onde estao o M, o V e o C no seu frontend? Eles existem de forma clara?**
+
+Existem, em tres arquivos com fronteiras que da para verificar lendo os `import`... ou melhor,
+nesse caso, lendo o que cada arquivo **nao** faz:
+
+| Camada | Arquivo | Responsabilidade | O que nao faz |
+|---|---|---|---|
+| **Model** | `js/model.js` | estado da sessao (token, usuario, agencia) e acesso a API | nunca toca no DOM |
+| **View** | `js/view.js` | desenha a tela e le os campos | nunca chama `fetch` |
+| **Controller** | `js/controller.js` | responde aos eventos, orquestra Model e View, trata erros | nao monta HTML nem faz requisicao |
+
+O teste que uso para saber se a separacao e real: `model.js` nao contem nenhuma ocorrencia de
+`document`, e `view.js` nao contem nenhuma de `fetch`. Se o ICEIBank ganhasse outra interface, o
+Model seria reaproveitado inteiro.
+
+Sendo honesto sobre onde o padrao fica menos puro: a comunicacao e de mao unica, do Controller
+para a View. Nao ha observadores nem binding — quando um saldo muda, e o Controller que chama
+`atualizarContas()` explicitamente. Num MVC classico, a View observaria o Model e se atualizaria
+sozinha. Para o tamanho desta tela, achei que a indirecao de um sistema de eventos custaria mais
+clareza do que traria: com sete acoes possiveis, redesenhar explicitamente e mais facil de seguir
+do que rastrear quem escuta o que.
+
+---
+
+## Funcionalidade adicional: limite por operacao (secao 2.1)
+
+**O que faz.** Nenhum saque pode passar de R$ 1.000,00 por operacao, e nenhuma transferencia
+pode passar de R$ 5.000,00. Os dois tetos sao configuraveis por agencia
+(`iceibank.limites.saque` e `iceibank.limites.transferencia`, sobrescritiveis por variavel de
+ambiente), e uma rota nova, `GET /limites`, informa a regra vigente — o frontend a consulta
+logo apos o login e exibe o teto na tela, para a pessoa conhecer a regra antes de tentar.
+
+**Por que escolhi essa.** Limite por operacao e a defesa que um banco tem contra o dano de uma
+credencial comprometida. Ele conversa diretamente com a Parte F: o JWT responde "quem e voce",
+a autorizacao responde "esta conta e sua", e o limite responde **"mesmo sendo sua, nao tudo de
+uma vez"**. As tres camadas juntas mostram que autenticacao sozinha nao e controle de risco.
+
+**Tres decisoes de projeto que valem explicar:**
+
+*Deposito nao tem limite.* Limite de operacao existe para conter **saida** de dinheiro; depositar
+na propria conta nao causa perda a ninguem. Bancos reais seguem a mesma logica.
+
+*O limite e checado ANTES do saldo.* Uma tentativa de sacar 20.000 de uma conta com 39.200 e
+recusada por violar o limite, e nao por falta de saldo. A ordem importa porque a mensagem muda o
+que a pessoa faz em seguida: "pedir aumento de limite" e um caminho, "depositar dinheiro" e
+outro — e a segunda mensagem seria simplesmente falsa aqui, ja que o saldo dava.
+
+*A recusa vai para o log de eventos, com timestamp de Lamport.* Os tipos `SAQUE_RECUSADO_LIMITE`
+e `TRANSFERENCIA_RECUSADA_LIMITE` entram no mesmo `.jsonl` das demais operacoes e aparecem na
+linha do tempo unificada. Uma sequencia de recusas por limite e exatamente o rastro que uma
+tentativa de fraude deixaria, e ela ficaria invisivel se o sistema so respondesse 400 e
+esquecesse o ocorrido.
+
+**Evidencia de teste** (`evidencias/sprint1/funcionalidade-adicional.png`):
+
+```
+GET /limites                          -> {"limitePorSaque":1000,"limitePorTransferencia":5000,...}
+deposito de 40000                     -> 200  (deposito nao tem limite)
+saque de 1000    (exatamente o teto)  -> 200  (o limite e o maximo permitido, nao o primeiro proibido)
+saque de 1000.01 (um centavo acima)   -> 400  "Valor acima do limite por saque (maximo 1000)."
+saque de 20000   (com saldo de sobra) -> 400  recusa por LIMITE, nao por saldo
+transferencia de 6000                 -> 400  "Valor acima do limite por transferencia (maximo 5000)."
+saldo apos as recusas                 -> intacto: nenhuma operacao recusada mexeu no saldo
+```
+
+Cobertos tambem por 4 testes automatizados em `LimitesConfigTest`, incluindo o caso de borda que
+mais erra na pratica: o valor **exatamente igual** ao limite, que deve passar.

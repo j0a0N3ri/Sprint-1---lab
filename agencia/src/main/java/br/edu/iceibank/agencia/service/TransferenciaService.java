@@ -34,6 +34,20 @@ public class TransferenciaService {
             throw ErroDeNegocio.requisicaoInvalida("Origem e destino nao podem ser a mesma conta.");
         }
 
+        // Funcionalidade adicional: limite por transferencia. A checagem vem antes do debito,
+        // entao a operacao recusada nao mexe em saldo nenhum - e um "nao" limpo, sem estorno.
+        if (banco.getLimites().transferenciaAcimaDoLimite(valor)) {
+            int tsRecusa = banco.getRelogio().eventoLocal();
+            banco.getRegistro().registrar("TRANSFERENCIA_RECUSADA_LIMITE", tsRecusa,
+                RegistroEventos.detalhes(
+                    "idOrigem", idOrigem, "idDestino", idDestino, "valor", valor,
+                    "limite", banco.getLimites().getLimiteTransferencia()
+                ));
+            throw ErroDeNegocio.requisicaoInvalida(
+                "Valor acima do limite por transferencia (maximo "
+                    + banco.getLimites().getLimiteTransferencia() + ").");
+        }
+
         int agenciaDestino = AgenciaConfig.agenciaResponsavel(idDestino);
         int tsEnvio;
 

@@ -1,6 +1,7 @@
 package br.edu.iceibank.agencia.service;
 
 import br.edu.iceibank.agencia.config.AgenciaConfig;
+import br.edu.iceibank.agencia.config.LimitesConfig;
 import br.edu.iceibank.agencia.exception.ErroDeNegocio;
 import br.edu.iceibank.agencia.model.Conta;
 import org.springframework.beans.factory.annotation.Value;
@@ -29,14 +30,21 @@ public class BancoService {
     private final int idAgencia;
     private final RelogioLamport relogio;
     private final RegistroEventos registro;
+    private final LimitesConfig limites;
     private final Map<Integer, Conta> contas = new ConcurrentHashMap<>();
 
     public BancoService(@Value("${agencia.id}") int idAgencia,
                         RelogioLamport relogio,
-                        RegistroEventos registro) {
+                        RegistroEventos registro,
+                        LimitesConfig limites) {
         this.idAgencia = idAgencia;
         this.relogio = relogio;
         this.registro = registro;
+        this.limites = limites;
+    }
+
+    public LimitesConfig getLimites() {
+        return limites;
     }
 
     public int getIdAgencia() {
@@ -116,6 +124,20 @@ public class BancoService {
     public synchronized Conta sacar(int id, BigDecimal valor) {
         exigirValorPositivo(valor);
         Conta conta = buscarConta(id);
+
+        // Funcionalidade adicional: o limite e checado ANTES do saldo, de proposito.
+        // Uma tentativa de sacar 50.000 de uma conta com 100 deve ser recusada por violar
+        // o limite, nao por falta de saldo - a mensagem certa muda o que a pessoa faz
+        // a seguir (pedir aumento de limite x depositar dinheiro).
+        if (limites.saqueAcimaDoLimite(valor)) {
+            int tsRecusa = relogio.eventoLocal();
+            registro.registrar("SAQUE_RECUSADO_LIMITE", tsRecusa, RegistroEventos.detalhes(
+                "id", id, "valor", valor, "limite", limites.getLimiteSaque()
+            ));
+            throw ErroDeNegocio.requisicaoInvalida(
+                "Valor acima do limite por saque (maximo " + limites.getLimiteSaque() + ").");
+        }
+
         if (!conta.temSaldoPara(valor)) {
             throw ErroDeNegocio.requisicaoInvalida("Saldo insuficiente.");
         }
