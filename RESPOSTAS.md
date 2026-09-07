@@ -223,3 +223,137 @@ componente maior que o do outro, os eventos sao **provadamente concorrentes**. A
 O custo e o tamanho: em vez de um inteiro, cada mensagem e cada evento carregam N inteiros,
 onde N e o numero de processos. Para 3 agencias e barato; para milhares de nos, nao. Essa troca
 — precisao causal por tamanho de metadado — e a decisao que o Sprint 2 vai materializar.
+
+---
+
+## Parte F — Autenticacao JWT (secao 11.3)
+
+### Decisoes de design (justificativas pedidas na secao 11.1)
+
+**Formato das credenciais: login e senha, nao "numero da conta + senha".**
+Uma pessoa pode ser dona de mais de uma conta — inclusive em agencias diferentes, ja que a
+particao e por numero de conta e nao por dono. Amarrar a identidade ao numero da conta
+obrigaria a um login por conta e quebraria assim que alguem tivesse duas. Com login proprio, a
+identidade e da pessoa e as contas sao um atributo dela: o vinculo acontece na criacao da conta
+(quem cria vira dono), e e esse vinculo que sustenta a autorizacao.
+
+As senhas ficam guardadas com hash **BCrypt**, nunca em texto puro. Se a memoria do processo
+vazar, o atacante nao ganha as senhas de graca. E o login responde a mesma mensagem
+("Credenciais invalidas.") tanto para usuario inexistente quanto para senha errada — distinguir
+os dois casos entregaria de graca a lista de logins validos do sistema.
+
+**Expiracao: 15 minutos (900s), configuravel.**
+Um JWT nao pode ser revogado antes de vencer — o servidor nao consulta nada para valida-lo, e e
+justamente essa a vantagem dele. Logo, a expiracao e o unico limite real da janela de uso de um
+token vazado. 15 minutos e o equilibrio entre seguranca e nao obrigar a pessoa a relogar toda
+hora. O valor sai da propriedade `iceibank.jwt.expiracao-segundos`, o que permitiu testar o
+cenario de token expirado com 5 segundos, sem esperar 15 minutos.
+
+**Algoritmo: HMAC-SHA256 (simetrico).**
+A mesma chave assina e verifica. Foi a escolha certa aqui porque as tres agencias sao do mesmo
+dono, ja compartilham configuracao e qualquer uma precisa validar o token emitido por outra. Se
+as agencias fossem de organizacoes diferentes, o correto seria um algoritmo assimetrico (RS256):
+cada emissor guarda a chave privada e distribui apenas a publica, e ninguem consegue forjar
+token em nome de outro. A agencia se recusa a subir se o segredo tiver menos de 32 caracteres —
+HMAC-SHA256 exige 256 bits, e falhar na subida e melhor do que descobrir isso no primeiro login.
+
+**A chamada entre agencias (`creditar-remoto`) carrega token — mas um token diferente.**
+Essa era a decisao a justificar, e considerei tres caminhos:
+
+1. *Deixar a rota aberta.* Descartado: seria o maior buraco do sistema. Qualquer um com acesso a
+   rede poderia creditar qualquer conta em qualquer valor, sem autenticacao nenhuma — dinheiro
+   de graca via `curl`.
+2. *Repassar o token do usuario que iniciou a transferencia.* Descartado por dois motivos. O
+   primeiro e conceitual: do lado da agencia de destino nao existe um usuario, existe um
+   processo — a pessoa nem e cliente daquela agencia, e o dono da conta creditada normalmente e
+   outra pessoa. O segundo e pratico: o token do usuario pode vencer no meio da operacao, e uma
+   transferencia falharia por expiracao de credencial de terceiro.
+3. *Token de servico proprio* — o que implementei. A agencia de origem emite um token com claim
+   `tipo: SERVICO`, assinado com a mesma chave, valido por **60 segundos**: ele nasce, atravessa
+   uma unica chamada e morre. A rota `/contas/{id}/creditar-remoto` exige `hasRole("SERVICO")`, e
+   todas as outras exigem `hasRole("USUARIO")`.
+
+O efeito e que as duas identidades ficam separadas de verdade, e isso e verificavel:
+
+```
+creditar-remoto SEM token                      -> 401
+creditar-remoto com token de USUARIO valido    -> 403  (autenticado, mas sem permissao)
+transferencia entre agencias (token de servico) -> 200
+```
+
+Um usuario legitimo nao consegue chamar a rota interna na mao para creditar a propria conta.
+
+### Perguntas
+
+**1. Qual a diferenca entre autenticacao e autorizacao? Sua implementacao verifica so uma das
+duas? Um usuario autenticado consegue sacar de uma conta que nao e dele?**
+
+**Autenticacao** responde "quem e voce" — e a validacao da assinatura do JWT, feita pelo
+`JwtFiltro`, que coloca a identidade no contexto de seguranca. **Autorizacao** responde "voce
+pode fazer isso" — e ela nao decorre da primeira: saber quem alguem e nao diz nada sobre o que
+essa pessoa tem direito de fazer.
+
+Implementei **as duas**, em duas camadas distintas:
+
+- Autorizacao por *tipo de identidade*, no `SecurityConfig`: rota interna so aceita SERVICO,
+  rotas de conta so aceitam USUARIO.
+- Autorizacao por *propriedade do recurso*, no `ContextoDeSeguranca`: cada operacao sobre uma
+  conta chama `exigirDonoDaConta(id)` antes de tocar no saldo.
+
+Respondendo diretamente: **nao, um usuario autenticado nao consegue sacar de conta alheia**.
+Testado — bruno, com token perfeitamente valido, tentando sacar da conta da ana:
+
+```
+POST /contas/0/sacar  Authorization: Bearer <token valido do bruno>
+{"erro":"A conta 0 nao pertence ao usuario autenticado."}   [HTTP 403]
+```
+
+O 403 (e nao 401) e proposital e carrega significado: o token e valido, a pessoa esta
+identificada — o que falta e permissao. Um 401 ali diria "faca login de novo", conselho inutil
+para quem ja esta logado.
+
+Uma decisao consciente: a autorizacao vale sobre a conta de **origem** da transferencia, nao
+sobre a de destino. Transferir dinheiro para a conta de outra pessoa e o uso normal de um banco;
+o que nao pode e *tirar* dinheiro de conta alheia.
+
+**2. Por que o servidor nao precisa consultar um banco para validar a assinatura de um JWT? O
+que isso implica sobre escalabilidade, comparado a guardar sessoes em memoria?**
+
+Porque a validacao e um calculo, nao uma consulta. O token carrega o proprio conteudo
+(`sub`, `exp`, `tipo`) e uma assinatura HMAC daquele conteudo. Para validar, o servidor
+recalcula o HMAC com a chave que ja tem em memoria e compara: se bate, o conteudo nao foi
+adulterado, porque nenhum atacante consegue produzir a assinatura correta sem a chave. Toda a
+informacao necessaria viaja junto com a requisicao.
+
+A implicacao pratica aparece exatamente neste projeto. Com sessao em memoria, o estado do login
+moraria **dentro de um processo**: ana loga na Agencia 0, e a Agencia 1 nao faz ideia de quem
+ela e. Para as tres agencias reconhecerem a mesma sessao seria preciso um armazenamento
+compartilhado (um Redis, um banco) — mais uma peca de infraestrutura, mais uma consulta de rede
+por requisicao, e um ponto unico de falha novo. Com JWT, basta as tres compartilharem a chave, e
+elas ja compartilham. A configuracao do sistema e literalmente `SessionCreationPolicy.STATELESS`:
+o servidor nao guarda nada entre requisicoes. Adicionar uma quarta agencia nao exige sincronizar
+sessao com ninguem.
+
+O custo dessa escolha e o outro lado da mesma moeda: como nada e consultado, nada pode ser
+**revogado**. Um token roubado vale ate expirar, e nao ha "deslogar" de verdade — so esperar o
+`exp`. Sistemas que precisam de revogacao imediata acabam reintroduzindo estado no servidor
+(uma lista de tokens banidos), o que devolve parte do problema que o JWT veio resolver.
+
+**3. O que aconteceria se a chave secreta usada para assinar o JWT vazasse?**
+
+Seria comprometimento total do controle de acesso do sistema. Com a chave, qualquer um forja um
+token valido para **qualquer** identidade, com **qualquer** validade — e as agencias nao teriam
+como distinguir o forjado do legitimo, porque a unica prova que elas checam e a assinatura.
+Concretamente, neste projeto o atacante poderia:
+
+- emitir token como `ana` e esvaziar as contas dela, sem nunca saber a senha;
+- emitir token com `tipo: SERVICO` e chamar `creditar-remoto` direto, creditando qualquer conta
+  em qualquer valor — criando dinheiro do nada, ja que essa rota credita sem debitar ninguem;
+- emitir tokens com expiracao de anos, garantindo acesso permanente.
+
+O agravante e que **trocar as senhas nao resolveria**: a falha nao esta nas credenciais, esta na
+prova de identidade. A unica reacao eficaz e trocar a chave, o que invalida de uma vez todos os
+tokens em circulacao — inclusive os legitimos, derrubando todo mundo. Por isso, na configuracao,
+o segredo vem de variavel de ambiente (`${JWT_SEGREDO:...}`) com um valor padrao apenas para o
+ambiente local de desenvolvimento: em producao, chave em arquivo versionado no Git e um vazamento
+esperando acontecer.

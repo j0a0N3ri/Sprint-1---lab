@@ -73,7 +73,7 @@ public class TransferenciaService {
 
         try {
             cliente.creditarRemoto(urlDestino, idDestino,
-                new CreditoRemotoRequest(valor, tsEnvio, banco.getIdAgencia()));
+                new CreditoRemotoRequest(valor, tsEnvio, banco.getIdAgencia()), banco.getIdAgencia());
         } catch (Exception e) {
             return falhaEntreAgencias(idOrigem, idDestino, valor, e);
         }

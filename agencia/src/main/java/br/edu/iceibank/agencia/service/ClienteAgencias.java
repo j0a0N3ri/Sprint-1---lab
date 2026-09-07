@@ -1,6 +1,8 @@
 package br.edu.iceibank.agencia.service;
 
 import br.edu.iceibank.agencia.controller.dto.CreditoRemotoRequest;
+import br.edu.iceibank.agencia.security.JwtService;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClient;
@@ -20,17 +22,25 @@ import java.time.Duration;
 public class ClienteAgencias {
 
     private final RestClient http;
+    private final JwtService jwt;
 
-    public ClienteAgencias() {
+    public ClienteAgencias(JwtService jwt) {
+        this.jwt = jwt;
         SimpleClientHttpRequestFactory fabrica = new SimpleClientHttpRequestFactory();
         fabrica.setConnectTimeout(Duration.ofSeconds(2));
         fabrica.setReadTimeout(Duration.ofSeconds(3));
         this.http = RestClient.builder().requestFactory(fabrica).build();
     }
 
-    public void creditarRemoto(String urlAgenciaDestino, int idConta, CreditoRemotoRequest corpo) {
+    /**
+     * A chamada entre agencias tambem vai autenticada, com um token de SERVICO proprio -
+     * nao com o token da pessoa que iniciou a transferencia. Ver a justificativa em
+     * RESPOSTAS.md (Parte F).
+     */
+    public void creditarRemoto(String urlAgenciaDestino, int idConta, CreditoRemotoRequest corpo, int idAgenciaOrigem) {
         http.post()
             .uri(urlAgenciaDestino + "/contas/" + idConta + "/creditar-remoto")
+            .header(HttpHeaders.AUTHORIZATION, "Bearer " + jwt.gerarTokenDeServico(idAgenciaOrigem))
             .body(corpo)
             .retrieve()
             .toBodilessEntity();
