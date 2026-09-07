@@ -1,0 +1,154 @@
+/* ICEIBank - estilo simples e funcional. O roteiro nao exige design elaborado nem
+   responsividade; a prioridade aqui e que erro de API apareca de forma inconfundivel. */
+
+:root {
+  --fundo: #f4f6f8;
+  --cartao: #ffffff;
+  --borda: #d8dee6;
+  --texto: #1c2733;
+  --suave: #5b6b7c;
+  --principal: #1f5f8b;
+  --principal-escuro: #17486a;
+  --erro: #b3261e;
+  --erro-fundo: #fdecea;
+  --sucesso: #1b5e20;
+  --sucesso-fundo: #e8f5e9;
+  --aviso: #7a5200;
+  --aviso-fundo: #fff4d6;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  background: var(--fundo);
+  color: var(--texto);
+  font-size: 15px;
+}
+
+header {
+  background: var(--principal);
+  color: #fff;
+  padding: 14px 24px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+header h1 { font-size: 20px; margin: 0; letter-spacing: 0.5px; }
+
+.sessao { display: flex; align-items: center; gap: 12px; font-size: 14px; }
+
+.etiqueta {
+  background: rgba(255, 255, 255, 0.18);
+  padding: 3px 10px;
+  border-radius: 12px;
+  font-size: 13px;
+}
+
+main { max-width: 1000px; margin: 20px auto; padding: 0 16px 40px; }
+
+.cartao {
+  background: var(--cartao);
+  border: 1px solid var(--borda);
+  border-radius: 8px;
+  padding: 18px 20px;
+  margin-bottom: 16px;
+}
+
+.cartao h2 { margin: 0 0 12px; font-size: 17px; }
+
+.cabecalho-secao { display: flex; justify-content: space-between; align-items: center; }
+
+.colunas {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 16px;
+}
+.colunas .cartao { margin-bottom: 0; }
+
+label { display: block; margin: 10px 0 4px; font-size: 13px; color: var(--suave); }
+
+input, select {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--borda);
+  border-radius: 5px;
+  font-size: 14px;
+  font-family: inherit;
+  background: #fff;
+}
+
+input:focus, select:focus { outline: 2px solid var(--principal); outline-offset: -1px; }
+
+button {
+  margin-top: 12px;
+  padding: 9px 16px;
+  border: none;
+  border-radius: 5px;
+  background: var(--principal);
+  color: #fff;
+  font-size: 14px;
+  font-family: inherit;
+  cursor: pointer;
+}
+button:hover { background: var(--principal-escuro); }
+button:disabled { opacity: 0.5; cursor: default; }
+
+button.secundario { background: #6b7c8d; }
+button.secundario:hover { background: #566878; }
+
+.botoes { display: flex; gap: 10px; }
+.botoes button { flex: 1; }
+
+.ajuda { font-size: 13px; color: var(--suave); margin: 4px 0 10px; line-height: 1.5; }
+
+code {
+  background: #eef1f5;
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-size: 12.5px;
+}
+
+/* --- faixa de mensagens: e aqui que todo erro da API aparece --- */
+.mensagem {
+  max-width: 1000px;
+  margin: 16px auto 0;
+  padding: 12px 16px;
+  border-radius: 6px;
+  border-left: 5px solid;
+  font-size: 14px;
+  line-height: 1.5;
+}
+.mensagem.erro    { background: var(--erro-fundo);    border-color: var(--erro);    color: var(--erro); }
+.mensagem.sucesso { background: var(--sucesso-fundo); border-color: var(--sucesso); color: var(--sucesso); }
+.mensagem.aviso   { background: var(--aviso-fundo);   border-color: var(--aviso);   color: var(--aviso); }
+
+.resultado {
+  margin-top: 12px;
+  padding: 10px 12px;
+  border-radius: 6px;
+  background: #eef1f5;
+  font-size: 14px;
+  line-height: 1.6;
+}
+.resultado.local         { background: var(--sucesso-fundo); }
+.resultado.entre-agencias{ background: #e3f2fd; }
+
+.lista { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 8px; }
+
+.conta {
+  border: 1px solid var(--borda);
+  border-radius: 6px;
+  padding: 12px 16px;
+  min-width: 180px;
+  background: #fbfcfd;
+}
+.conta .numero { font-size: 13px; color: var(--suave); }
+.conta .titular { font-weight: 600; margin: 2px 0; }
+.conta .saldo { font-size: 20px; color: var(--principal); }
+
+.vazio { color: var(--suave); font-size: 14px; padding: 8px 0; }
+
+.oculto { display: none !important; }

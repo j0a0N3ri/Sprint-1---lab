@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ICEIBank</title>
+  <link rel="stylesheet" href="css/estilo.css">
+</head>
+<body>
+
+  <header>
+    <h1>ICEIBank</h1>
+    <div id="sessao" class="sessao oculto">
+      <span id="usuarioLogado"></span>
+      <span id="agenciaAtual" class="etiqueta"></span>
+      <button id="btnSair" class="secundario">Sair</button>
+    </div>
+  </header>
+
+  <!-- Faixa de mensagens: todo erro da API aparece aqui, visivel, nunca so no console -->
+  <div id="mensagem" class="mensagem oculto"></div>
+
+  <main>
+
+    <!-- ============ TELA DE LOGIN ============ -->
+    <section id="telaLogin" class="cartao">
+      <h2>Entrar</h2>
+      <p class="ajuda">
+        Cada agencia responde apenas pelas contas sob sua responsabilidade
+        (<code>id da conta % 3</code>). Escolha por qual delas voce quer entrar.
+      </p>
+
+      <label for="loginAgencia">Agencia de entrada</label>
+      <select id="loginAgencia">
+        <option value="0">Agencia 0 - porta 4000 (contas 0, 3, 6, ...)</option>
+        <option value="1">Agencia 1 - porta 4001 (contas 1, 4, 7, ...)</option>
+        <option value="2">Agencia 2 - porta 4002 (contas 2, 5, 8, ...)</option>
+      </select>
+
+      <label for="loginUsuario">Usuario</label>
+      <input id="loginUsuario" type="text" placeholder="ana" autocomplete="username">
+
+      <label for="loginSenha">Senha</label>
+      <input id="loginSenha" type="password" placeholder="senha123" autocomplete="current-password">
+
+      <button id="btnEntrar">Entrar</button>
+      <p class="ajuda">Usuarios de demonstracao: ana, bruno, carla, davi - senha <code>senha123</code></p>
+    </section>
+
+    <!-- ============ APLICACAO (depois do login) ============ -->
+    <div id="telaApp" class="oculto">
+
+      <section class="cartao">
+        <div class="cabecalho-secao">
+          <h2>Minhas contas nesta agencia</h2>
+          <button id="btnAtualizar" class="secundario">Atualizar</button>
+        </div>
+        <div id="listaContas" class="lista"></div>
+      </section>
+
+      <div class="colunas">
+
+        <section class="cartao">
+          <h2>Abrir conta</h2>
+          <p class="ajuda">A agencia recusa contas que nao sejam dela - e a particao em acao.</p>
+          <label for="novaContaId">Numero da conta</label>
+          <input id="novaContaId" type="number" min="0" placeholder="0">
+          <label for="novaContaNome">Nome do titular</label>
+          <input id="novaContaNome" type="text" placeholder="Ana">
+          <label for="novaContaSaldo">Saldo inicial</label>
+          <input id="novaContaSaldo" type="number" min="0" step="0.01" placeholder="200">
+          <button id="btnCriarConta">Abrir conta</button>
+        </section>
+
+        <section class="cartao">
+          <h2>Consultar saldo</h2>
+          <label for="consultaId">Numero da conta</label>
+          <input id="consultaId" type="number" min="0" placeholder="0">
+          <button id="btnConsultar">Consultar</button>
+          <div id="resultadoConsulta" class="resultado oculto"></div>
+        </section>
+
+        <section class="cartao">
+          <h2>Deposito e saque</h2>
+          <label for="opId">Numero da conta</label>
+          <input id="opId" type="number" min="0" placeholder="0">
+          <label for="opValor">Valor</label>
+          <input id="opValor" type="number" min="0.01" step="0.01" placeholder="50">
+          <div class="botoes">
+            <button id="btnDepositar">Depositar</button>
+            <button id="btnSacar" class="secundario">Sacar</button>
+          </div>
+          <p class="ajuda" id="limiteSaque"></p>
+        </section>
+
+        <section class="cartao">
+          <h2>Transferencia</h2>
+          <p class="ajuda">
+            A mesma tela serve para transferencia local e entre agencias: quem descobre onde
+            mora a conta de destino e o backend. O resultado abaixo diz qual das duas ocorreu.
+          </p>
+          <label for="transfOrigem">Conta de origem (desta agencia)</label>
+          <input id="transfOrigem" type="number" min="0" placeholder="0">
+          <label for="transfDestino">Conta de destino (qualquer agencia)</label>
+          <input id="transfDestino" type="number" min="0" placeholder="1">
+          <label for="transfValor">Valor</label>
+          <input id="transfValor" type="number" min="0.01" step="0.01" placeholder="30">
+          <button id="btnTransferir">Transferir</button>
+          <p class="ajuda" id="limiteTransferencia"></p>
+          <div id="resultadoTransferencia" class="resultado oculto"></div>
+        </section>
+
+      </div>
+    </div>
+  </main>
+
+  <!--
+    MVC no frontend (pergunta 12.3):
+      model.js      - estado da sessao e acesso a API. Nao conhece o DOM.
+      view.js       - desenha e le a tela. Nao conhece HTTP.
+      controller.js - liga os eventos do usuario ao model e manda a view redesenhar.
+    Sao scripts classicos, e nao modulos ES, de proposito: modulos exigem servidor HTTP,
+    e assim a pagina abre direto pelo arquivo, com duplo clique.
+  -->
+  <script src="js/model.js"></script>
+  <script src="js/view.js"></script>
+  <script src="js/controller.js"></script>
+</body>
+</html>
