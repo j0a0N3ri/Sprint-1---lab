@@ -130,7 +130,7 @@ public class BancoService {
 
     // --- apoio -----------------------------------------------------------------------
 
-    void exigirValorPositivo(BigDecimal valor) {
+    public void exigirValorPositivo(BigDecimal valor) {
         if (valor == null || valor.signum() <= 0) {
             throw ErroDeNegocio.requisicaoInvalida("O valor da operacao deve ser positivo.");
         }
