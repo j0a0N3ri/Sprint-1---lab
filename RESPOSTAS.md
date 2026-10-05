@@ -535,7 +535,9 @@ apaga suas contas, pois elas continuam apenas em memoria. O consumidor recebe e 
 da mensagem, mas nao encontra a conta de destino. Ele registra `CREDITO_REMOTO_FALHOU`, rejeita a
 mensagem sem reenfileirar na fila principal e o RabbitMQ a encaminha para
 `fila-agencia-1.nao-processadas`. A mensageria entregou corretamente; o credito falhou por falta
-de persistencia do estado da aplicacao.
+de persistencia do estado da aplicacao. No teste real, a Agencia 0 publicou R$ 50 com vetor de
+envio `[5, 0, 0]`. Quando a Agencia 1 voltou, registrou a falha com vetor `[5, 1, 0]`, e o
+LavinMQ Manager mostrou `Ready: 1` na fila de nao processadas.
 
 **2. O que melhorou em relacao ao Sprint 1 e o que continua aberto?**
 
@@ -545,6 +547,10 @@ remove o acoplamento temporal entre as agencias. Ainda nao ha atomicidade nem pe
 contas: publicar com sucesso nao significa que o credito foi aplicado, e o debito pode continuar
 sem credito correspondente. A fila de nao processadas preserva a falha para analise, mas nao
 corrige automaticamente o saldo.
+
+No caminho feliz observado, o debito de R$ 100 foi registrado na Agencia 0 com vetor `[2, 0, 0]`,
+o envio carregou `[3, 0, 0]` e o credito na Agencia 1 ficou com `[3, 2, 0]`. Os saldos passaram
+de R$ 1.000 para R$ 900 na origem e de R$ 500 para R$ 600 no destino.
 
 **3. O consumidor nao validar JWT e um problema?**
 
@@ -567,11 +573,10 @@ perdia a origem desse conhecimento ao resumir tudo em um numero.
 
 **2. Exemplo de par concorrente.**
 
-Uma criacao de conta na Agencia 0 com vetor `[1, 0, 0]` e uma criacao independente na Agencia 1
-com vetor `[0, 1, 0]` sao concorrentes. A primeira operacao nao enviou mensagem para a segunda,
-nem a segunda para a primeira. Cada vetor e maior somente na posicao da propria agencia, exatamente
-o padrao que a comparacao classifica como concorrente. O par concreto da execucao final deve ser
-registrado junto da evidencia `linha-do-tempo-causal.png`.
+No teste final, um deposito na Agencia 0 recebeu vetor `[6, 0, 0]` e um deposito independente na
+Agencia 2 recebeu `[0, 0, 2]`. Eles sao concorrentes: o primeiro vetor e maior na posicao 0 e o
+segundo e maior na posicao 2. Nenhuma das operacoes enviou mensagem para a outra, portanto nao ha
+relacao de causa e efeito. O resultado aparece em `evidencias/sprint2/linha-do-tempo-causal.png`.
 
 **3. O custo O(n²) seria um problema em escala?**
 
@@ -593,3 +598,6 @@ um ciclo infinito. A fila preserva o identificador da transferencia, contas, val
 causal para investigacao ou reprocessamento posterior. Ela melhora a observabilidade, mas nao e
 uma solucao de atomicidade: decidir se o debito deve ser compensado continua exigindo o protocolo
 distribuido previsto para a Sprint 4.
+
+No teste de resiliência, a fila `fila-agencia-1.nao-processadas` terminou com uma mensagem pronta
+e nenhum consumidor, conforme `evidencias/sprint2/funcionalidade-adicional.png`.
