@@ -7,9 +7,9 @@ Frontend: HTML + CSS + JavaScript puro (sem framework)
 
 ## Declaracao de uso de IA
 
-Utilizei ferramenta de IA como apoio pontual em revisao de codigo e redacao deste
-documento, nos termos permitidos pelo enunciado. As decisoes de arquitetura e o
-codigo entregue sao de minha autoria e posso explicar e defender qualquer trecho.
+Utilizei ferramenta de IA como apoio na implementacao, nos testes e na revisao deste
+documento, nos termos permitidos pelo enunciado. Revisei as decisoes adotadas e posso
+explicar e defender o funcionamento do projeto.
 
 ---
 
@@ -500,3 +500,96 @@ saldo apos as recusas                 -> intacto: nenhuma operacao recusada mexe
 
 Cobertos tambem por 4 testes automatizados em `LimitesConfigTest`, incluindo o caso de borda que
 mais erra na pratica: o valor **exatamente igual** ao limite, que deve passar.
+
+---
+
+# ICEIBank — Sprint 2: respostas e decisoes de projeto
+
+## Parte B — Relogio vetorial (secao 6.4)
+
+**1. O que acontece com o vetor ao crescer de 3 para 10 agencias?**
+
+Cada vetor passa de 3 para 10 posicoes. O custo de armazenamento, envio e comparacao cresce
+linearmente com o numero de agencias: O(n). Para 10 agencias isso ainda e pequeno, mas em um
+sistema com milhares de participantes o metadado acompanha cada mensagem e cada evento, podendo
+ficar caro. O beneficio desse custo e manter a informacao necessaria para provar causalidade ou
+concorrencia, algo que um unico contador nao consegue fazer.
+
+**2. Relacao entre `V1 = [3, 1, 0]` e `V2 = [3, 2, 0]`.**
+
+`V1` aconteceu antes de `V2`. Comparando cada posicao: `3 <= 3`, `1 <= 2` e `0 <= 0`, com pelo
+menos uma desigualdade estrita. Portanto, `V1 < V2` na ordem vetorial.
+
+**3. Relacao entre `V1 = [3, 1, 0]` e `V2 = [1, 3, 0]`.**
+
+Os eventos sao concorrentes. `V1` e maior na primeira posicao (`3 > 1`), enquanto `V2` e maior
+na segunda (`3 > 1`). Nenhum vetor e menor ou igual ao outro em todas as posicoes, portanto nao
+existe evidencia de que um tenha causado o outro.
+
+## Parte C — Publish/Subscribe (secao 7.5)
+
+**1. O que acontece quando a Agencia 1 volta?**
+
+O RabbitMQ entrega a mensagem que ficou retida na fila duravel. Entretanto, reiniciar a agencia
+apaga suas contas, pois elas continuam apenas em memoria. O consumidor recebe e incorpora o vetor
+da mensagem, mas nao encontra a conta de destino. Ele registra `CREDITO_REMOTO_FALHOU`, rejeita a
+mensagem sem reenfileirar na fila principal e o RabbitMQ a encaminha para
+`fila-agencia-1.nao-processadas`. A mensageria entregou corretamente; o credito falhou por falta
+de persistencia do estado da aplicacao.
+
+**2. O que melhorou em relacao ao Sprint 1 e o que continua aberto?**
+
+No Sprint 1, a origem dependia da Agencia 1 responder naquele instante. Com mensageria, a origem
+publica mesmo sem consumidor ativo, e o broker preserva a mensagem ate a agencia voltar. Isso
+remove o acoplamento temporal entre as agencias. Ainda nao ha atomicidade nem persistencia das
+contas: publicar com sucesso nao significa que o credito foi aplicado, e o debito pode continuar
+sem credito correspondente. A fila de nao processadas preserva a falha para analise, mas nao
+corrige automaticamente o saldo.
+
+**3. O consumidor nao validar JWT e um problema?**
+
+O consumidor nao recebe uma requisicao HTTP, portanto JWT nao e o mecanismo adequado nessa
+fronteira. A seguranca depende das credenciais e permissoes do RabbitMQ: somente produtores
+autorizados devem conseguir publicar na exchange. No ambiente atual, quem obtiver a URL completa
+do CloudAMQP consegue tentar publicar eventos, por isso ela fica apenas na variavel de ambiente e
+nunca no repositorio. Em producao, cada servico deveria ter usuario proprio e permissoes minimas
+de publicacao e consumo.
+
+## Parte D — Linha do tempo causal (secao 8.3)
+
+**1. O que torna a comparacao confiavel?**
+
+Cada posicao registra quanto um processo conhece sobre uma agencia especifica. Se todos os
+componentes de A sao menores ou iguais aos de B, B conhece toda a historia representada por A e
+possivelmente mais: A aconteceu antes de B. Se A e maior em uma posicao e B e maior em outra,
+nenhum contem o conhecimento completo do outro, provando concorrencia. O contador de Lamport
+perdia a origem desse conhecimento ao resumir tudo em um numero.
+
+**2. Exemplo de par concorrente.**
+
+Uma criacao de conta na Agencia 0 com vetor `[1, 0, 0]` e uma criacao independente na Agencia 1
+com vetor `[0, 1, 0]` sao concorrentes. A primeira operacao nao enviou mensagem para a segunda,
+nem a segunda para a primeira. Cada vetor e maior somente na posicao da propria agencia, exatamente
+o padrao que a comparacao classifica como concorrente. O par concreto da execucao final deve ser
+registrado junto da evidencia `linha-do-tempo-causal.png`.
+
+**3. O custo O(n²) seria um problema em escala?**
+
+Sim. Um milhao de eventos produziria aproximadamente 500 bilhoes de pares. Em um sistema real,
+a analise poderia ser limitada por janela de tempo, agencia ou tipo de evento; processada em
+lotes; ou substituida por indices e estruturas que mantenham apenas uma fronteira causal, em vez
+de comparar todo evento historico com todos os demais. Para o volume didatico do ICEIBank, a
+comparacao completa deixa o algoritmo mais simples de verificar.
+
+## Funcionalidade adicional da Sprint 2 — fila de nao processadas
+
+A fila principal de cada agencia aponta para a exchange `iceibank.eventos.dlx`. Quando uma
+mensagem nao pode ser processada — por exemplo, porque a conta em memoria desapareceu depois de
+um reinicio — o consumidor registra o motivo e rejeita sem reenfileirar. O RabbitMQ move o evento
+para `fila-agencia-<id>.nao-processadas`.
+
+Essa decisao evita dois problemas: perder definitivamente o evento e repetir a mesma mensagem em
+um ciclo infinito. A fila preserva o identificador da transferencia, contas, valor, origem e vetor
+causal para investigacao ou reprocessamento posterior. Ela melhora a observabilidade, mas nao e
+uma solucao de atomicidade: decidir se o debito deve ser compensado continua exigindo o protocolo
+distribuido previsto para a Sprint 4.

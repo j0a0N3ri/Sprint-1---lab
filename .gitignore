@@ -8,5 +8,9 @@ build/
 # Logs gerados em runtime
 agencia/data/*.jsonl
 
+# Credenciais locais
+.env
+*.env
+
 # Sistema
 .DS_Store
