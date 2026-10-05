@@ -15,7 +15,7 @@ import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Estado e regras da agencia: as contas sob responsabilidade desta particao, o relogio de
- * Lamport e o log de eventos. Equivale ao app.locals do exemplo em Node.
+ * vetorial e o log de eventos. Equivale ao app.locals do exemplo em Node.
  *
  * As contas vivem em memoria de proposito (nao ha banco de dados neste sprint): o foco e
  * REST/MVC e o relogio logico. Reiniciar a agencia zera as contas, e o esperado.
@@ -28,13 +28,13 @@ import java.util.concurrent.ConcurrentHashMap;
 public class BancoService {
 
     private final int idAgencia;
-    private final RelogioLamport relogio;
+    private final RelogioVetorial relogio;
     private final RegistroEventos registro;
     private final LimitesConfig limites;
     private final Map<Integer, Conta> contas = new ConcurrentHashMap<>();
 
     public BancoService(@Value("${agencia.id}") int idAgencia,
-                        RelogioLamport relogio,
+                        RelogioVetorial relogio,
                         RegistroEventos registro,
                         LimitesConfig limites) {
         this.idAgencia = idAgencia;
@@ -51,7 +51,7 @@ public class BancoService {
         return idAgencia;
     }
 
-    public RelogioLamport getRelogio() {
+    public RelogioVetorial getRelogio() {
         return relogio;
     }
 
@@ -98,7 +98,7 @@ public class BancoService {
             throw ErroDeNegocio.requisicaoInvalida("O saldo inicial nao pode ser negativo.");
         }
 
-        int ts = relogio.eventoLocal();
+        int[] ts = relogio.eventoLocal();
         Conta conta = new Conta(id, nomeAluno, saldoInicial);
         contas.put(id, conta);
         registro.registrar("CRIAR_CONTA", ts, RegistroEventos.detalhes(
@@ -113,7 +113,7 @@ public class BancoService {
         exigirValorPositivo(valor);
         Conta conta = buscarConta(id);
 
-        int ts = relogio.eventoLocal();
+        int[] ts = relogio.eventoLocal();
         conta.creditar(valor);
         registro.registrar("DEPOSITO", ts, RegistroEventos.detalhes(
             "id", id, "valor", valor, "novoSaldo", conta.getSaldo()
@@ -130,7 +130,7 @@ public class BancoService {
         // o limite, nao por falta de saldo - a mensagem certa muda o que a pessoa faz
         // a seguir (pedir aumento de limite x depositar dinheiro).
         if (limites.saqueAcimaDoLimite(valor)) {
-            int tsRecusa = relogio.eventoLocal();
+            int[] tsRecusa = relogio.eventoLocal();
             registro.registrar("SAQUE_RECUSADO_LIMITE", tsRecusa, RegistroEventos.detalhes(
                 "id", id, "valor", valor, "limite", limites.getLimiteSaque()
             ));
@@ -142,7 +142,7 @@ public class BancoService {
             throw ErroDeNegocio.requisicaoInvalida("Saldo insuficiente.");
         }
 
-        int ts = relogio.eventoLocal();
+        int[] ts = relogio.eventoLocal();
         conta.debitar(valor);
         registro.registrar("SAQUE", ts, RegistroEventos.detalhes(
             "id", id, "valor", valor, "novoSaldo", conta.getSaldo()

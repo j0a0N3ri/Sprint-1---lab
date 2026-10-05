@@ -128,7 +128,8 @@ window.View = (function () {
     linhas.push(entreAgencias
       ? 'Transferencia ENTRE AGENCIAS concluida (destino: Agencia ' + resposta.agenciaDestino + ')'
       : 'Transferencia LOCAL concluida (mesma agencia)');
-    linhas.push('Relogio de Lamport no momento da operacao: ' + resposta.timestampLamport);
+    linhas.push(
+      'Relogio vetorial no momento da operacao: [' + resposta.timestampVetorial.join(', ') + ']');
     if (resposta.saldoOrigem !== undefined) {
       linhas.push('Saldo da origem: ' + moeda(resposta.saldoOrigem));
     }

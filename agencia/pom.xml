@@ -39,6 +39,10 @@
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-webmvc</artifactId>
 		</dependency>
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter-amqp</artifactId>
+		</dependency>
 
 		<!-- JWT: jjwt-api compila, impl e gson entram so em runtime.
 		     O binding e o gson e nao o jackson porque o Spring Boot 4 traz Jackson 3

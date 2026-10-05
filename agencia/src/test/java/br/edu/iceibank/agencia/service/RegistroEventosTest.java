@@ -20,7 +20,7 @@ class RegistroEventosTest {
     @Test
     void gravaUmaLinhaJsonPorEvento(@TempDir Path pasta) throws Exception {
         RegistroEventos registro = new RegistroEventos("agencia-teste", pasta);
-        RelogioLamport relogio = new RelogioLamport();
+        RelogioVetorial relogio = new RelogioVetorial(0, 3);
 
         registro.registrar("CRIAR_CONTA", relogio.eventoLocal(), Map.of("id", 0));
         registro.registrar("DEPOSITO", relogio.eventoLocal(), Map.of("id", 0, "valor", 25));
@@ -30,8 +30,8 @@ class RegistroEventosTest {
 
         assertTrue(linhas.get(0).contains("\"agencia\":\"agencia-teste\""));
         assertTrue(linhas.get(0).contains("\"tipo\":\"CRIAR_CONTA\""));
-        assertTrue(linhas.get(0).contains("\"timestampLamport\":1"));
+        assertTrue(linhas.get(0).contains("\"timestampVetorial\":[1,0,0]"));
         assertTrue(linhas.get(0).contains("\"horaParede\""));
-        assertTrue(linhas.get(1).contains("\"timestampLamport\":2"));
+        assertTrue(linhas.get(1).contains("\"timestampVetorial\":[2,0,0]"));
     }
 }

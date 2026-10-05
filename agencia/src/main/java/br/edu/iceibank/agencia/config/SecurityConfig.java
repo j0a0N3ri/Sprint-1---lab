@@ -19,8 +19,7 @@ import java.util.List;
  *
  * Tres niveis de acesso:
  *   /auth/login              - publico, senao ninguem consegue o primeiro token;
- *   /contas/{id}/creditar-remoto - so token de SERVICO (agencia falando com agencia);
- *   todo o resto             - so token de USUARIO (pessoa autenticada).
+ *   todo o restante          - so token de USUARIO (pessoa autenticada).
  *
  * A sessao e STATELESS: o servidor nao guarda nada entre requisicoes. Toda a identidade vem
  * do token, a cada chamada. E o que permite as 3 agencias aceitarem o mesmo token sem
@@ -47,7 +46,6 @@ public class SecurityConfig {
             .authorizeHttpRequests(req -> req
                 .requestMatchers(HttpMethod.POST, "/auth/login").permitAll()
                 .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
-                .requestMatchers(HttpMethod.POST, "/contas/*/creditar-remoto").hasRole("SERVICO")
                 .anyRequest().hasRole("USUARIO"))
             .exceptionHandling(e -> e
                 .authenticationEntryPoint((req, res, ex) -> responder(res, 401,

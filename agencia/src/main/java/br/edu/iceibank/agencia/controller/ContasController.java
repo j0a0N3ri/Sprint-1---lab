@@ -19,7 +19,7 @@ import java.util.List;
 
 /**
  * Camada de controle (o "C" do MVC): traduz HTTP em chamada de servico e devolve o resultado.
- * Nenhuma regra de negocio mora aqui - saldo, particao e relogio de Lamport sao do BancoService.
+ * Nenhuma regra de negocio mora aqui - saldo, particao e relogio vetorial sao do BancoService.
  */
 @RestController
 @RequestMapping("/contas")

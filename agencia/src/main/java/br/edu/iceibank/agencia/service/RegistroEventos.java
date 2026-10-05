@@ -17,10 +17,10 @@ import java.util.Map;
 /**
  * Registro de eventos da agencia, um arquivo .jsonl por agencia (uma linha JSON por evento).
  * E a materia-prima da linha do tempo unificada da Parte E: sem esse arquivo nao ha como
- * observar o relogio de Lamport ordenando eventos de processos diferentes.
+ * observar a relacao causal entre eventos de processos diferentes.
  *
- * Cada evento carrega dois carimbos de tempo: timestampLamport (o relogio logico, que ordena
- * o sistema) e horaParede (o relogio fisico da maquina, guardado so para comparacao na Parte E
+ * Cada evento carrega dois carimbos de tempo: timestampVetorial (o relogio logico) e
+ * horaParede (o relogio fisico da maquina, guardado so para comparacao
  * - nenhuma decisao do sistema usa esse campo).
  */
 public class RegistroEventos {
@@ -47,15 +47,15 @@ public class RegistroEventos {
     /**
      * Grava um evento no log e devolve o mapa gravado.
      *
-     * O metodo e synchronized pelo mesmo motivo do RelogioLamport: o Spring Boot atende
+     * O metodo e synchronized pelo mesmo motivo do RelogioVetorial: o Spring Boot atende
      * requisicoes em varias threads, e duas escritas simultaneas no mesmo arquivo poderiam
      * intercalar bytes e corromper uma linha do .jsonl.
      */
-    public synchronized Map<String, Object> registrar(String tipo, int timestampLamport, Map<String, Object> detalhes) {
+    public synchronized Map<String, Object> registrar(String tipo, int[] timestampVetorial, Map<String, Object> detalhes) {
         Map<String, Object> evento = new LinkedHashMap<>();
         evento.put("agencia", nomeAgencia);
         evento.put("tipo", tipo);
-        evento.put("timestampLamport", timestampLamport);
+        evento.put("timestampVetorial", timestampVetorial.clone());
         evento.put("horaParede", Instant.now().toString());
         evento.put("detalhes", detalhes);
 
@@ -68,7 +68,7 @@ public class RegistroEventos {
                 StandardOpenOption.CREATE,
                 StandardOpenOption.APPEND
             );
-            System.out.println("[Lamport " + timestampLamport + "] " + tipo + " " + linha);
+            System.out.println("[Vetor " + java.util.Arrays.toString(timestampVetorial) + "] " + tipo + " " + linha);
         } catch (IOException e) {
             throw new UncheckedIOException("Falha ao gravar evento no log da " + nomeAgencia, e);
         }
