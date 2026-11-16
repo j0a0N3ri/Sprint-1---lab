@@ -1,0 +1,197 @@
+name: ICEIBank Sprint 3 E2E
+on:
+  push:
+    branches: [sprint3-e2e]
+    paths: ['.github/workflows/sprint3-e2e.yml']
+permissions:
+  contents: read
+jobs:
+  evidence:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      TZ: America/Sao_Paulo
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+      - name: Build and start RabbitMQ and the agencies
+        run: |
+          mkdir -p evidencias/sprint3
+          python3 -m pip install pillow --break-system-packages
+          docker run -d --name iceibank-rabbit -p 5672:5672 rabbitmq:3.13
+          mvn -B -f agencia/pom.xml -DskipTests package
+          for n in {1..60}; do docker exec iceibank-rabbit rabbitmq-diagnostics -q ping && break; sleep 1; done
+          cat > /tmp/start-iceibank <<'SH'
+          cd agencia
+          AGENCIA_ID="$1" nohup java -jar target/agencia-0.0.1-SNAPSHOT.jar > "/tmp/iceibank-$1.log" 2>&1 &
+          echo $! > "/tmp/iceibank-$1.pid"
+          SH
+          for id in 0 1 2; do bash /tmp/start-iceibank "$id"; done
+      - name: Exercise real HTTP, RabbitMQ, Bully and synchronization
+        run: |
+          cat > /tmp/icei_evidence.py <<'PY'
+          import io,json,re,subprocess,time,urllib.request,urllib.error
+          from pathlib import Path
+          from PIL import Image,ImageDraw,ImageFont
+          out=Path('evidencias/sprint3')
+          def sh(*args): return subprocess.check_output(args).decode().strip()
+          def now(): return sh('pwsh','-NoProfile','-Command','Get-Date -Format "yyyy-MM-dd HH:mm:ss zzz"')
+          def api(p,path,body=None,token=None):
+              headers={'Content-Type':'application/json'}
+              if token: headers['Authorization']='Bearer '+token
+              request=urllib.request.Request(f'http://127.0.0.1:{p}{path}',None if body is None else json.dumps(body).encode(),headers)
+              try:
+                  with urllib.request.urlopen(request,timeout=4) as r: return r.status,json.load(r)
+              except urllib.error.HTTPError as r: return r.code,json.load(r)
+          def wait(f,seconds=65):
+              deadline=time.monotonic()+seconds
+              while time.monotonic()<deadline:
+                  try:
+                      v=f()
+                      if v: return v
+                  except (OSError,ValueError,KeyError): pass
+                  time.sleep(.75)
+              raise AssertionError('Tempo esgotado aguardando condição: '+str(f))
+          def leaders(ids,leader):
+              states=[api(4000+i,'/bully/lider')[1] for i in ids]
+              return states if all(s['liderAtual']==leader for s in states) else None
+          def stop(id):
+              sh('kill',Path(f'/tmp/iceibank-{id}.pid').read_text().strip())
+              return f'$ kill $(cat /tmp/iceibank-{id}.pid)'
+          def capture(name,title,lines,android=None):
+              stamp='$ Get-Date    '+now()
+              font=ImageFont.truetype('/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf',17)
+              full=[title,stamp,'']+list(lines)
+              width=max(880,max(map(len,full))*11+44)
+              panel=Image.new('RGB',(width,28+len(full)*25),'#101a20')
+              draw=ImageDraw.Draw(panel)
+              for i,line in enumerate(full): draw.text((18,16+i*25),line,font=font,fill='#b6f5d8' if i<2 else '#f5f7f8')
+              if android:
+                  screen=Image.open(io.BytesIO(android)).convert('RGB')
+                  canvas=Image.new('RGB',(max(width,screen.width),panel.height+screen.height),'#101a20')
+                  canvas.paste(panel,(0,0)); canvas.paste(screen,((canvas.width-screen.width)//2,panel.height)); panel=canvas
+              panel.save(out/(name+'.png'))
+          def state_lines(states):
+              return [line for s in states for line in (f'$ GET :{4000+s["idAgencia"]}/bully/lider',json.dumps(s))]
+          if __name__=='__main__':
+              states=wait(lambda:leaders([0,1,2],2))
+              capture('eleicao-inicial','Eleição de três processos Java',state_lines(states))
+              cmd=stop(2)
+              states=wait(lambda:leaders([0,1],1))
+              capture('failover','Após encerrar a líder, heartbeat elegeu a agência 1',[cmd]+state_lines(states))
+              history=sh('node','agencia/historico-lideranca.js')
+              capture('historico-lideranca','Saída real do histórico de liderança',['$ node agencia/historico-lideranca.js']+history.splitlines()[-15:])
+              token=api(4000,'/auth/login',{'login':'ana','senha':'senha123'})[1]['token']
+              for p,id in ((4000,0),(4000,3),(4001,1)):
+                  code,_=api(p,'/contas',{'id':id,'nomeAluno':'Ana','saldoInicial':100},token); assert code==201
+              code,_=api(4000,'/transferencias',{'idOrigem':0,'idDestino':3,'valor':2},token); assert code==200
+              code,data=api(4000,'/transferencias',{'idOrigem':0,'idDestino':1,'valor':3},token); assert code==200 and data['status']=='PUBLICADA'
+              wait(lambda:api(4001,'/contas/1',token=token)[1]['saldo']==103)
+              vetor=api(4000,'/contas/0',token=token)[1]['vetorAtual']
+              assert api(4000,'/contas/0/depositar',{'valor':25},token)[0]==200
+              op={'tipo':'DEPOSITO','valor':10,'vetorConhecido':vetor}
+              code,body=api(4000,'/contas/0/sincronizar',op,token); assert code==409
+              capture('conflito-sincronizacao','Sincronização com vetor anterior recusada',['$ POST :4000/contas/0/sincronizar',json.dumps(op),'HTTP '+str(code)]+json.dumps(body,indent=2,ensure_ascii=False).splitlines())
+              op['vetorConhecido']=body['vetorAtual']
+              assert api(4000,'/contas/0/sincronizar',op,token)[0]==200
+              print('Transferência local e transferência remota via RabbitMQ confirmadas.')
+              sh('bash','/tmp/start-iceibank','2')
+              wait(lambda:leaders([0,1,2],2))
+          PY
+          python3 /tmp/icei_evidence.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: sprint3-backend
+          path: evidencias/sprint3/*.png
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.47.6'
+          channel: stable
+      - name: Build native Android app
+        working-directory: app_mobile
+        run: flutter build apk --debug
+      - name: Prepare Android UI verification
+        run: |
+          cat > /tmp/icei-android.sh <<'SH'
+          set -eux
+          adb shell wm size 520x1000
+          adb shell wm density 160
+          adb install -r app_mobile/build/app/outputs/flutter-apk/app-debug.apk
+          adb shell am start -n com.example.iceibank_mobile/.MainActivity
+          python3 /tmp/icei_android.py
+          SH
+          cat > /tmp/icei_android.py <<'PY'
+          from icei_evidence import *
+          import xml.etree.ElementTree as ET
+          def adb(*args): return sh('adb',*args)
+          def nodes():
+              adb('shell','uiautomator','dump','/sdcard/icei.xml')
+              xml=adb('shell','cat','/sdcard/icei.xml')
+              return list(ET.fromstring(xml).iter('node'))
+          def label(n): return ' '.join((n.get('text',''),n.get('content-desc',''))).strip()
+          def find(text):
+              return next((n for n in nodes() if text.casefold() in label(n).casefold()),None)
+          def tap_node(n):
+              x1,y1,x2,y2=map(int,re.findall(r'\d+',n.get('bounds')))
+              adb('shell','input','tap',str((x1+x2)//2),str((y1+y2)//2))
+          def tap(text): tap_node(wait(lambda:find(text),25))
+          def enter(text): adb('shell','input','text',text)
+          def screen(name,title,*lines):
+              capture(name,title,lines,subprocess.check_output(['adb','exec-out','screencap','-p']))
+          def airplane(enabled):
+              adb('shell','cmd','connectivity','airplane-mode','enable' if enabled else 'disable')
+              adb('shell','svc','wifi','disable' if enabled else 'enable')
+              adb('shell','svc','data','disable' if enabled else 'enable')
+          def deposit(value):
+              tap('Depositar'); tap('Valor em reais'); enter(str(value))
+              adb('shell','input','keyevent','4'); tap('Confirmar')
+          tap('Usuário'); enter('ana'); tap('Senha'); enter('senha123')
+          adb('shell','input','keyevent','4'); tap('Entrar')
+          wait(lambda:find('Agência 2'),35)
+          screen('app-lider-atual','Android Flutter conectado às agências reais','Líder inicial: 2')
+          stop(0)
+          wait(lambda:find('0 · Sem resposta'),30)
+          screen('funcionalidade-adicional','Indicador de agências no Android','Agência 0 encerrada; a agência 2 permanece líder.')
+          sh('bash','/tmp/start-iceibank','0')
+          wait(lambda:leaders([0,1,2],2))
+          stop(2)
+          wait(lambda:find('Agência 1'),35)
+          screen('app-failover','Atualização automática em Android após queda real','Processo 2 encerrado. O painel apresentou a agência 1.')
+          tok=api(4000,'/auth/login',{'login':'ana','senha':'senha123'})[1]['token']
+          created=api(4000,'/contas',{'id':0,'nomeAluno':'Ana','saldoInicial':100},tok)[0]; assert created==201
+          adb('shell','am','force-stop','com.example.iceibank_mobile')
+          adb('shell','am','start','-n','com.example.iceibank_mobile/.MainActivity')
+          tap('Usuário'); enter('ana'); tap('Senha'); enter('senha123')
+          adb('shell','input','keyevent','4'); tap('Entrar')
+          wait(lambda:find('Saldo confirmado'),35)
+          airplane(True)
+          wait(lambda:find('Agências inacessíveis'),35)
+          deposit(25)
+          wait(lambda:find('Saldo provisório'),30)
+          screen('app-offline','Android em modo avião','Depósito de R$ 25 registrado localmente.')
+          airplane(False)
+          wait(lambda:api(4000,'/contas/0',token=tok)[1]['saldo']==125,50)
+          wait(lambda:find('Operação sincronizada'),30)
+          screen('app-sincronizacao','Android com a rede restabelecida','A API confirmou saldo 125 após o envio automático da fila.')
+          PY
+      - name: Enable local emulator acceleration
+        run: sudo chmod 666 /dev/kvm
+      - uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          target: default
+          arch: x86_64
+          disable-animations: true
+          script: bash /tmp/icei-android.sh
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: sprint3-e2e
+          path: |
+            evidencias/sprint3/*.png
+            /tmp/iceibank-*.log
