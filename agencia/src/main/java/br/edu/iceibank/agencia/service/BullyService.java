@@ -14,7 +14,9 @@ import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Function;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
@@ -32,16 +34,23 @@ public class BullyService {
     private final RegistroEventos registro;
     private final ObjectMapper json;
     private final ScheduledExecutorService worker = Executors.newSingleThreadScheduledExecutor();
-    private final HttpClient http = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(1)).build();
+    private final Function<HttpRequest, String> transporte;
     private volatile Integer lider;
     private long esperarCoordenadorAte;
 
+    @Autowired
     public BullyService(@Value("${agencia.id}") int id, RelogioVetorial relogio,
                        RegistroEventos registro, ObjectMapper json) {
+        this(id, relogio, registro, json, transporteHttp());
+    }
+
+    BullyService(int id, RelogioVetorial relogio, RegistroEventos registro, ObjectMapper json,
+                 Function<HttpRequest, String> transporte) {
         this.id = id;
         this.relogio = relogio;
         this.registro = registro;
         this.json = json;
+        this.transporte = transporte;
     }
 
     @Value("${iceibank.bully.enabled:true}")
@@ -50,7 +59,11 @@ public class BullyService {
     @EventListener(ApplicationReadyEvent.class)
     public void iniciar() {
         if (!habilitado) return;
-        worker.scheduleWithFixedDelay(() -> executar(this::verificar), 0, 3, TimeUnit.SECONDS);
+        iniciarHeartbeat(Duration.ofSeconds(3));
+    }
+
+    void iniciarHeartbeat(Duration intervalo) {
+        worker.scheduleWithFixedDelay(() -> executar(this::verificar), 0, intervalo.toMillis(), TimeUnit.MILLISECONDS);
     }
 
     @PreDestroy
@@ -151,12 +164,12 @@ public class BullyService {
     }
 
     private Estado consultar(int destino) {
-        String corpo = chamar(requisicao(destino, "/bully/lider").GET().build());
+        String corpo = transporte.apply(requisicao(destino, "/bully/lider").GET().build());
         return corpo == null ? null : json.readValue(corpo, Estado.class);
     }
 
     private boolean enviar(int destino, String rota, Object corpo) {
-        return chamar(requisicao(destino, rota).header("Content-Type", "application/json")
+        return transporte.apply(requisicao(destino, rota).header("Content-Type", "application/json")
             .POST(HttpRequest.BodyPublishers.ofString(json.writeValueAsString(corpo))).build()) != null;
     }
 
@@ -165,7 +178,12 @@ public class BullyService {
             .timeout(Duration.ofSeconds(1));
     }
 
-    private String chamar(HttpRequest req) {
+    private static Function<HttpRequest, String> transporteHttp() {
+        HttpClient http = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(1)).build();
+        return req -> chamar(http, req);
+    }
+
+    private static String chamar(HttpClient http, HttpRequest req) {
         try {
             var resposta = http.send(req, HttpResponse.BodyHandlers.ofString());
             return resposta.statusCode() == 200 ? resposta.body() : null;
