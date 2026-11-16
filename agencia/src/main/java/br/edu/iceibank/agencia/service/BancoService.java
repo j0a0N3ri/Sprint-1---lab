@@ -63,6 +63,57 @@ public class BancoService {
         return contas.size();
     }
 
+    public record Saldo(int id, String nomeAluno, BigDecimal saldo, int[] vetorAtual) {}
+    public record Pendente(String tipo, BigDecimal valor, int[] vetorConhecido, java.util.UUID operacaoId) {}
+    public record Conflito(String erro, int[] vetorConhecido, int[] vetorAtual, Saldo contaAtual) {}
+    public record Sincronizacao(Saldo saldo, Conflito conflito) {}
+    private record Aplicada(int conta, String tipo, BigDecimal valor) {}
+    private final Map<java.util.UUID, Aplicada> aplicadas = new java.util.HashMap<>();
+
+    public synchronized Saldo consultarSaldo(int id) {
+        Conta conta = buscarConta(id);
+        return new Saldo(id, conta.getNomeAluno(), conta.getSaldo(), relogio.valorAtual());
+    }
+
+    public synchronized Sincronizacao sincronizar(int id, Pendente req) {
+        if (req.vetorConhecido() == null || req.vetorConhecido().length != AgenciaConfig.NUMERO_AGENCIAS
+                || java.util.Arrays.stream(req.vetorConhecido()).anyMatch(n -> n < 0)) {
+            throw ErroDeNegocio.requisicaoInvalida("Informe um vetor conhecido válido.");
+        }
+        exigirValorPositivo(req.valor());
+        // Fecha a janela entre comparar o vetor e alterar o saldo, inclusive durante eleição.
+        synchronized (relogio) {
+            Saldo atual = consultarSaldo(id);
+            Aplicada anterior = req.operacaoId() == null ? null : aplicadas.get(req.operacaoId());
+            if (anterior != null) {
+                if (anterior.conta() != id || !anterior.tipo().equals(req.tipo())
+                        || anterior.valor().compareTo(req.valor()) != 0) {
+                    throw ErroDeNegocio.requisicaoInvalida("Identificador de operação já utilizado.");
+                }
+                return new Sincronizacao(atual, null);
+            }
+            if (!java.util.Arrays.equals(atual.vetorAtual(), req.vetorConhecido())) {
+                return new Sincronizacao(null, new Conflito(
+                    "O estado da agência mudou desde a última leitura.", req.vetorConhecido(),
+                    atual.vetorAtual(), atual));
+            }
+
+            if ("DEPOSITO".equals(req.tipo())) {
+                depositar(id, req.valor());
+            } else if ("SAQUE".equals(req.tipo())) {
+                sacar(id, req.valor());
+            } else {
+                throw ErroDeNegocio.requisicaoInvalida("Tipo de operação pendente não suportado.");
+            }
+            if (req.operacaoId() != null) {
+                aplicadas.put(req.operacaoId(), new Aplicada(id, req.tipo(), req.valor()));
+            }
+            registro.registrar("SINCRONIZACAO_OFFLINE", relogio.valorAtual(),
+                RegistroEventos.detalhes("id", id, "tipo", req.tipo(), "valor", req.valor()));
+            return new Sincronizacao(consultarSaldo(id), null);
+        }
+    }
+
     // --- consultas -------------------------------------------------------------------
 
     /** Busca a conta nesta agencia, ou explode com 404 se ela nao for daqui. */

@@ -54,9 +54,19 @@ public class ContasController {
     }
 
     @GetMapping("/{id}")
-    public Conta consultarSaldo(@PathVariable int id) {
+    public BancoService.Saldo consultarSaldo(@PathVariable int id) {
         seguranca.exigirDonoDaConta(id);
-        return banco.buscarConta(id);
+        return banco.consultarSaldo(id);
+    }
+
+    @PostMapping("/{id}/sincronizar")
+    public ResponseEntity<?> sincronizar(@PathVariable int id, @RequestBody BancoService.Pendente req) {
+        seguranca.exigirDonoDaConta(id);
+        var resultado = banco.sincronizar(id, req);
+        if (resultado.conflito() != null) {
+            return ResponseEntity.status(HttpStatus.CONFLICT).body(resultado.conflito());
+        }
+        return ResponseEntity.ok(resultado.saldo());
     }
 
     @PostMapping("/{id}/depositar")
