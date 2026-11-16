@@ -45,6 +45,8 @@ public class SecurityConfig {
             .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .authorizeHttpRequests(req -> req
                 .requestMatchers(HttpMethod.POST, "/auth/login").permitAll()
+                .requestMatchers(HttpMethod.POST, "/bully/eleicao", "/bully/coordenador").permitAll()
+                .requestMatchers(HttpMethod.GET, "/bully/lider").permitAll()
                 .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                 .anyRequest().hasRole("USUARIO"))
             .exceptionHandling(e -> e
