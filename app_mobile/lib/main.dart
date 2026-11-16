@@ -140,6 +140,24 @@ class _IceiBankAppState extends State<IceiBankApp> {
             key: const Key('leader'),
             style: Theme.of(context).textTheme.headlineSmall,
           ),
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 8,
+            children: [
+              for (final id in [0, 1, 2])
+                Chip(
+                  avatar: Icon(
+                    bank.reachable.contains(id)
+                        ? Icons.check_circle_outline
+                        : Icons.portable_wifi_off,
+                    size: 18,
+                  ),
+                  label: Text(
+                    '$id · ${bank.reachable.contains(id) ? 'Ativa' : 'Sem resposta'}',
+                  ),
+                ),
+            ],
+          ),
         ], color: const Color(0xffd9f1e7)),
         const SizedBox(height: 14),
         _panel([
