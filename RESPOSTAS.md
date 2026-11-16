@@ -601,3 +601,49 @@ distribuido previsto para a Sprint 4.
 
 No teste de resiliência, a fila `fila-agencia-1.nao-processadas` terminou com uma mensagem pronta
 e nenhum consumidor, conforme `evidencias/sprint2/funcionalidade-adicional.png`.
+
+# ICEIBank — Sprint 3
+
+## Declaração de uso de IA
+
+O OpenAI Codex foi usado para implementar e revisar o backend Java, o cliente Flutter, os testes e esta documentação. As observações abaixo distinguem resultados executados de comportamentos esperados. Os commits refletem a ordem de implementação desta sessão.
+
+## 5.5 — Mensagens de eleição e coordenador
+
+1. Por convenção, o maior ID tem prioridade: cada candidato pergunta aos IDs maiores e só se declara líder se nenhum deles confirmar que está ativo. A regra poderia ser invertida para eleger o menor, desde que todas as agências invertessem também quem consulta quem e quais anúncios aceitam.
+2. Declarações provisórias são possíveis na subida. A agência 0 pode consultar 1 e 2 antes que os servidores delas aceitem conexões e declarar a própria liderança. Quando 2 sobe, elege a si mesma e anuncia seu ID. O problema seria o sistema continuar com líderes divergentes depois de estabilizar. O teste isolado registrou a agência 0 se declarando líder sem acesso às demais. A demonstração em três processos depende da execução de rede descrita no README.
+3. Sim. Na rede do laboratório, uma rota aberta simplifica a comunicação interna. Se exposta, permite que chamadas externas provoquem tráfego, avancem o relógio e até forjem anúncios de liderança. Um sistema real deve restringir a rede interna e autenticar as mensagens entre agências. A API bancária continua exigindo JWT e validação de titularidade.
+
+## 6.4 — Heartbeat e failover
+
+1. Com 100 ms, uma agência acordaria cerca de dez vezes por segundo, aumentando as chamadas e o custo de rede e processamento. Com 60 s, a líder pode cair logo após uma consulta e demorar aproximadamente um minuto para ser detectada, além do tempo da eleição. Aqui o heartbeat tem pausa de três segundos entre verificações e timeout de um segundo por requisição.
+2. Recuperar a liderança para o maior ID é coerente com Bully. Se a líder também coordenasse transações em produção, uma troca no meio de uma operação poderia deixar participantes sem saber se deveriam confirmar ou desfazer a operação. Neste sprint a líder é informativa. Coordenação de transações exigiria mecanismos adicionais, como épocas de liderança e recuperação do estado da operação.
+3. Uma resposta acima de um segundo pode ser interpretada como falha. Isso pode gerar uma eleição desnecessária ou uma líder provisória com ID mais baixo. Quando a rede volta a responder, uma nova consulta ou anúncio permite convergir.
+
+## 7.3 — Histórico de liderança
+
+1. O script lê os eventos JSONL das agências, filtra os cinco tipos do Bully e ordena por horário físico para a demonstração. A primeira declaração é a eleição inicial. Cada declaração posterior com ID diferente conta como troca. Em uma subida com 2 já acessível pode haver zero trocas antes de estabilizar. Em uma subida escalonada 0 → 1 → 2 haveria duas. O número da rodada com três processos depende da ordem em que esses processos passam a aceitar HTTP. Cada eleição provisória gera requisições, atualizações de relógio e gravações no log. Horários físicos em computadores diferentes dependem da sincronização dos relógios.
+
+## 8.3 — Flutter
+
+1. Um timer dispara a consulta a cada três segundos, sem sobrepor uma rodada anterior. O painel reage em poucos segundos e evita consultar dezenas de vezes por segundo. Uma estratégia adaptativa em segundo plano poderia reduzir o consumo de rede e bateria.
+2. O app consulta as três agências em paralelo e considera as respostas válidas da rodada. Se houver duas que se declaram líderes, apresenta a de maior ID. Se nenhuma líder se confirmar, mostra que aguarda a eleição. A próxima rodada costuma resolver a divergência transitória. O painel é informativo para o cliente.
+3. Foram reaproveitados a API REST, o JWT, a regra `id % 3` para localizar a agência e a separação entre tela e lógica bancária. No Flutter, formulários, troca de estado e chamadas periódicas são componentes do app. Em mobile, o saldo e a fila persistem localmente, e a interface distingue saldo provisório de saldo confirmado.
+
+## 9.6 — Sincronização no backend
+
+1. Dois eventos podem deixar o saldo final igual ao inicial, por exemplo um depósito de 20 seguido de um saque de 20. O vetor avança mesmo nesse caso. Também registra informação recebida de outras agências nas outras posições. Como a ação só pode prosseguir com vetor igual, a rota compara todas as posições.
+2. O relógio é da agência. Operações de outras contas, mensagens recebidas e eventos de liderança podem invalidar um vetor mesmo que a conta em questão não tenha mudado. Para granularidade por conta, cada alteração, incluindo crédito remoto, precisaria avançar a revisão da conta afetada. Operações com várias contas precisariam considerar as revisões de todas as envolvidas.
+3. O Flutter guarda o saldo e vetor reais enviados no 409, suspende a fila daquela conta e mostra a mensagem. A pessoa pode descartar a fila e registrar novamente a operação de acordo com o saldo confirmado. Reenviar com o novo vetor automaticamente poderia aplicar um saque que já não faz sentido.
+
+**Resultado reproduzido com Spring MockMvc.** Uma conta com saldo 100 e vetor `[1,0,0]` recebeu depósito de 25. A sincronização com o vetor antigo retornou 409 com saldo 125 e vetor `[2,0,0]`. Com o vetor atualizado, o depósito de 10 resultou em 135. A repetição com o mesmo identificador manteve o saldo 135. A mesma rota respondeu 401 sem JWT.
+
+## 10.3 — Offline-first no Flutter
+
+1. Escolhi um arquivo JSON por usuário no diretório privado do app, localizado com `path_provider`. O conjunto de dados é pequeno e a fila e o cache da conta podem ser gravados juntos por substituição do arquivo temporário. A versão web usa armazenamento local do navegador. SQLite via `sqflite` serviria para consultas e transações mais complexas. Hive seria outra opção para guardar objetos por chave.
+2. O comportamento implementado para 409 é mostrar **Sincronização bloqueada**, o erro associado ao lançamento e o **Saldo confirmado pela agência**. Os lançamentos continuam visíveis até a pessoa decidir descartar a fila. A UI deixa de somar lançamentos dessa fila ao saldo exibido enquanto ela está bloqueada.
+3. Um saldo provisório pode levar a pessoa a presumir que o dinheiro já está disponível ou que um saque já foi aceito. A interface identifica o saldo como provisório, lista os lançamentos pendentes e restaura a visão de saldo confirmado em caso de conflito. Transferências exigem conexão. O identificador de cada depósito ou saque também impede reaplicação se a resposta da agência se perder e o app reenviar, enquanto o processo da agência mantiver seu estado em memória.
+
+## Funcionalidade adicional — Indicador de agências ativas
+
+O cartão de liderança mostra as três agências como **Ativa** ou **Sem resposta**, com base nas respostas HTTP da rodada mais recente. Isso permite observar a perda de uma seguidora, mesmo sem troca de líder. A demonstração consiste em manter a agência 2 como líder, derrubar a agência 0 e observar somente o indicador da agência 0 mudar. O recurso está no commit `feat(mobile): show which agencies are reachable`.
