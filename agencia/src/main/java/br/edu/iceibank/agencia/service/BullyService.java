@@ -44,8 +44,12 @@ public class BullyService {
         this.json = json;
     }
 
+    @Value("${iceibank.bully.enabled:true}")
+    private boolean habilitado;
+
     @EventListener(ApplicationReadyEvent.class)
     public void iniciar() {
+        if (!habilitado) return;
         worker.scheduleWithFixedDelay(() -> executar(this::verificar), 0, 3, TimeUnit.SECONDS);
     }
 

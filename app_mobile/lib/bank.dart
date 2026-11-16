@@ -312,8 +312,9 @@ class Bank extends ChangeNotifier {
           if (!listEquals(
             next['vetorConhecido'] as List,
             op['vetorConhecido'] as List,
-          ))
+          )) {
             break;
+          }
           next['vetorConhecido'] = result['vetorAtual'];
         }
         notice = 'Operação sincronizada.';
@@ -325,6 +326,7 @@ class Bank extends ChangeNotifier {
       } on Exception catch (error) {
         if (!_transport(error)) rethrow;
         blocked.add(id);
+        continue;
       }
       await _save();
     }
