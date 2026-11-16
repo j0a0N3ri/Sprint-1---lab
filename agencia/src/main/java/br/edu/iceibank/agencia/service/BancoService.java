@@ -67,7 +67,7 @@ public class BancoService {
     public record Pendente(String tipo, BigDecimal valor, int[] vetorConhecido, java.util.UUID operacaoId) {}
     public record Conflito(String erro, int[] vetorConhecido, int[] vetorAtual, Saldo contaAtual) {}
     public record Sincronizacao(Saldo saldo, Conflito conflito) {}
-    private record Aplicada(int conta, String tipo, BigDecimal valor) {}
+    private record Aplicada(int conta, String tipo, BigDecimal valor, Saldo resultado) {}
     private final Map<java.util.UUID, Aplicada> aplicadas = new java.util.HashMap<>();
 
     public synchronized Saldo consultarSaldo(int id) {
@@ -90,7 +90,7 @@ public class BancoService {
                         || anterior.valor().compareTo(req.valor()) != 0) {
                     throw ErroDeNegocio.requisicaoInvalida("Identificador de operação já utilizado.");
                 }
-                return new Sincronizacao(atual, null);
+                return new Sincronizacao(anterior.resultado(), null);
             }
             if (!java.util.Arrays.equals(atual.vetorAtual(), req.vetorConhecido())) {
                 return new Sincronizacao(null, new Conflito(
@@ -105,12 +105,13 @@ public class BancoService {
             } else {
                 throw ErroDeNegocio.requisicaoInvalida("Tipo de operação pendente não suportado.");
             }
+            Saldo resultado = consultarSaldo(id);
             if (req.operacaoId() != null) {
-                aplicadas.put(req.operacaoId(), new Aplicada(id, req.tipo(), req.valor()));
+                aplicadas.put(req.operacaoId(), new Aplicada(id, req.tipo(), req.valor(), resultado));
             }
             registro.registrar("SINCRONIZACAO_OFFLINE", relogio.valorAtual(),
                 RegistroEventos.detalhes("id", id, "tipo", req.tipo(), "valor", req.valor()));
-            return new Sincronizacao(consultarSaldo(id), null);
+            return new Sincronizacao(resultado, null);
         }
     }
 
