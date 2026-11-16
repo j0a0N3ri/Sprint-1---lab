@@ -2,7 +2,6 @@ name: ICEIBank Sprint 3 E2E
 on:
   push:
     branches: [sprint3-e2e]
-    paths: ['.github/workflows/sprint3-e2e.yml']
 permissions:
   contents: read
 jobs:
@@ -53,7 +52,7 @@ jobs:
                   try:
                       v=f()
                       if v: return v
-                  except (OSError,ValueError,KeyError): pass
+                  except (OSError,ValueError,KeyError,SyntaxError,subprocess.CalledProcessError): pass
                   time.sleep(.75)
               raise AssertionError('Tempo esgotado aguardando condição: '+str(f))
           def leaders(ids,leader):
