@@ -1,0 +1,16 @@
+ICEIBank — Sprint 3. Execução local, rede simulada no teste Bully.
+
+Bully com transporte de teste: 0 → 1 → 2 durante a subida.
+Bully com transporte de teste: failover automático de 2 para 1.
+HTTP 409 verificado pelo MockMvc: {"erro":"O estado da agência mudou desde a última leitura.","vetorConhecido":[1,0,0],"vetorAtual":[2,0,0],"contaAtual":{"id":90,"nomeAluno":"Ana","saldo":125,"vetorAtual":[2,0,0]}}
+
+Relatórios Maven Surefire
+Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 23.02 s -- in br.edu.iceibank.agencia.AgenciaApplicationTests
+Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.845 s -- in br.edu.iceibank.agencia.SincronizacaoHttpTest
+Tests run: 4, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.008 s -- in br.edu.iceibank.agencia.config.LimitesConfigTest
+Tests run: 6, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.110 s -- in br.edu.iceibank.agencia.security.JwtServiceTest
+Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.105 s -- in br.edu.iceibank.agencia.service.BullyServiceTest
+Tests run: 3, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.052 s -- in br.edu.iceibank.agencia.service.MensageriaFluxoTest
+Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.006 s -- in br.edu.iceibank.agencia.service.RegistroEventosTest
+Tests run: 5, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.007 s -- in br.edu.iceibank.agencia.service.RelogioVetorialTest
+Tests run: 2, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.011 s -- in br.edu.iceibank.agencia.tools.MesclarLogsTest

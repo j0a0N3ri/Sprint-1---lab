@@ -17,3 +17,17 @@ entrega usa `Get-Date` visível em um terminal.
 | `app-offline.png` | Modo avião com depósito listado como pendente |
 | `app-sincronizacao.png` | Rede reativada, saldo confirmado e fila drenada automaticamente |
 | `funcionalidade-adicional.png` | Agência 0 sem resposta e agência 2 ainda líder |
+
+## Resultados obtidos nesta sessão
+
+- A suíte Maven passou com 24 testes. O teste Bully usa três instâncias do serviço
+  e transporte em memória. A subida escalonada convergiu de 0 para 1 e depois 2.
+  O heartbeat reelegeu 1 após retirar 2. O teste Spring MVC confirmou HTTP 409
+  com saldo 125, aplicação com o vetor atualizado e repetição sem duplicar o saldo 135.
+- A análise estática do Flutter passou e o build web foi concluído. A lógica da fila
+  também foi executada no motor Flutter com uma API simulada, incluindo reconexão,
+  esvaziamento da fila e conflito visível.
+- [`testes-locais/`](testes-locais/) contém capturas da interface Flutter em execução
+  com API simulada, identificadas nas próprias imagens, e o resultado dos testes Java.
+  A validação fim a fim com três processos de rede, RabbitMQ ativo e Android ainda
+  precisa ser feita para produzir os prints exatos solicitados no roteiro.

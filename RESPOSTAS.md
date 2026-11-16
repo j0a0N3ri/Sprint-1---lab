@@ -611,7 +611,7 @@ O OpenAI Codex foi usado para implementar e revisar o backend Java, o cliente Fl
 ## 5.5 — Mensagens de eleição e coordenador
 
 1. Por convenção, o maior ID tem prioridade: cada candidato pergunta aos IDs maiores e só se declara líder se nenhum deles confirmar que está ativo. A regra poderia ser invertida para eleger o menor, desde que todas as agências invertessem também quem consulta quem e quais anúncios aceitam.
-2. Declarações provisórias são possíveis na subida. A agência 0 pode consultar 1 e 2 antes que os servidores delas aceitem conexões e declarar a própria liderança. Quando 2 sobe, elege a si mesma e anuncia seu ID. O problema seria o sistema continuar com líderes divergentes depois de estabilizar. O teste isolado registrou a agência 0 se declarando líder sem acesso às demais. A demonstração em três processos depende da execução de rede descrita no README.
+2. Declarações provisórias são possíveis na subida. A agência 0 pode consultar 1 e 2 antes que os servidores delas aceitem conexões e declarar a própria liderança. Quando 2 sobe, elege a si mesma e anuncia seu ID. O problema seria o sistema continuar com líderes divergentes depois de estabilizar. No teste com três instâncias do serviço e transporte em memória, a subida escalonada produziu 0 → 1 → 2. Ao retirar a agência 2, o heartbeat fez as restantes convergirem para 1.
 3. Sim. Na rede do laboratório, uma rota aberta simplifica a comunicação interna. Se exposta, permite que chamadas externas provoquem tráfego, avancem o relógio e até forjem anúncios de liderança. Um sistema real deve restringir a rede interna e autenticar as mensagens entre agências. A API bancária continua exigindo JWT e validação de titularidade.
 
 ## 6.4 — Heartbeat e failover
@@ -622,7 +622,7 @@ O OpenAI Codex foi usado para implementar e revisar o backend Java, o cliente Fl
 
 ## 7.3 — Histórico de liderança
 
-1. O script lê os eventos JSONL das agências, filtra os cinco tipos do Bully e ordena por horário físico para a demonstração. A primeira declaração é a eleição inicial. Cada declaração posterior com ID diferente conta como troca. Em uma subida com 2 já acessível pode haver zero trocas antes de estabilizar. Em uma subida escalonada 0 → 1 → 2 haveria duas. O número da rodada com três processos depende da ordem em que esses processos passam a aceitar HTTP. Cada eleição provisória gera requisições, atualizações de relógio e gravações no log. Horários físicos em computadores diferentes dependem da sincronização dos relógios.
+1. O script lê os eventos JSONL das agências, filtra os cinco tipos do Bully e ordena por horário físico para a demonstração. A primeira declaração é a eleição inicial. Cada declaração posterior com ID diferente conta como troca. Em uma subida com 2 já acessível pode haver zero trocas antes de estabilizar. Na subida escalonada do teste com transporte em memória houve duas, na sequência 0 → 1 → 2. O número da rodada com três processos depende da ordem em que esses processos passam a aceitar HTTP. Cada eleição provisória gera requisições, atualizações de relógio e gravações no log. Horários físicos em computadores diferentes dependem da sincronização dos relógios.
 
 ## 8.3 — Flutter
 
@@ -641,7 +641,7 @@ O OpenAI Codex foi usado para implementar e revisar o backend Java, o cliente Fl
 ## 10.3 — Offline-first no Flutter
 
 1. Escolhi um arquivo JSON por usuário no diretório privado do app, localizado com `path_provider`. O conjunto de dados é pequeno e a fila e o cache da conta podem ser gravados juntos por substituição do arquivo temporário. A versão web usa armazenamento local do navegador. SQLite via `sqflite` serviria para consultas e transações mais complexas. Hive seria outra opção para guardar objetos por chave.
-2. O comportamento implementado para 409 é mostrar **Sincronização bloqueada**, o erro associado ao lançamento e o **Saldo confirmado pela agência**. Os lançamentos continuam visíveis até a pessoa decidir descartar a fila. A UI deixa de somar lançamentos dessa fila ao saldo exibido enquanto ela está bloqueada.
+2. O comportamento implementado para 409 é mostrar **Sincronização bloqueada**, o erro associado ao lançamento e o **Saldo confirmado pela agência**. A captura de teste com API simulada mostra esse estado. Os lançamentos continuam visíveis até a pessoa decidir descartar a fila. A UI deixa de somar lançamentos dessa fila ao saldo exibido enquanto ela está bloqueada.
 3. Um saldo provisório pode levar a pessoa a presumir que o dinheiro já está disponível ou que um saque já foi aceito. A interface identifica o saldo como provisório, lista os lançamentos pendentes e restaura a visão de saldo confirmado em caso de conflito. Transferências exigem conexão. O identificador de cada depósito ou saque também impede reaplicação se a resposta da agência se perder e o app reenviar, enquanto o processo da agência mantiver seu estado em memória.
 
 ## Funcionalidade adicional — Indicador de agências ativas
